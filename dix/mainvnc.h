@@ -56,7 +56,7 @@ void VNC_service_init(ScreenPtr screen) {
     g_screen = screen;
     snprintf(config, sizeof(config), "{'screen':%d,'width':%d,'height':%d}", screen->myNum, screen->width, screen->height);
     VNC_log(config);
-    buffer = (unsigned char *)malloc(1000000 * sizeof(unsigned char));
+    buffer = (unsigned char *)malloc(screen->width * screen->height * 30 * sizeof(unsigned char));
     VNC_loop();
     VNC_log("XwebVNC server started: success stage 2");
 }
@@ -128,7 +128,7 @@ void* ws_thread_func(void* arg) {
 }
 
 void* vnc_thread_func(void* arg) {
-    int delay = getDelay(10);
+    int delay = getDelay(15);
     while(appRunning) {
         sendFrame(g_screen);
         usleep(delay);
@@ -141,8 +141,9 @@ void VNC_loop(void) {
     if (!g_ws) { perror("malloc"); return; }
 
     ws_init(g_ws);
-    ws_begin(g_ws, 8000);
+    ws_begin(g_ws, httpPort);
     g_ws->callBack = ws_onconnect;
+    printf("ws setup done\n");
 
     pthread_t ws_thread;
     if (pthread_create(&ws_thread, NULL, ws_thread_func, g_ws) != 0) {
@@ -159,24 +160,20 @@ void VNC_loop(void) {
 
 void sendFrame(ScreenPtr screen) {
    dq_merge(gdq);
-   int i = 15;
+   int i = 10;
    while(dq_hasNext(gdq) && i--){
         Rect r;
-        dq_get(gdq, &r);
+        if(!dq_get(gdq, &r)) return;
         if(g_ws->clients < 1) continue;
-        printf("step 1\n");
         extractRectRGB(screen, r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1, buffer);
-        printf("step 2\n");
         int img_size = 0;
-        char *jpeg_data = (char* )compress_image_to_jpeg(buffer, r.x2 - r.x1, r.y2 - r.y1, &img_size, 100);
-        printf("step 3\n");
+        char *jpeg_data = (char* )compress_image_to_jpeg(buffer, r.x2 - r.x1, r.y2 - r.y1, &img_size, 20);
         char data[256];  // adjust size if needed
         snprintf(
             data, sizeof(data),
             "VPD%d %d %d %d %d %d \n", r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1, 24, img_size
         );
         ws_p_sendRaw(g_ws, 130, data, jpeg_data, strlen(data), img_size, -1);
-        printf("step 4\n");
         free(jpeg_data);
    }
 }

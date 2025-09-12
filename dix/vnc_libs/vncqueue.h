@@ -135,10 +135,7 @@ void dq_merge(DamageQueue *dq) {
 
 bool dq_hasNext(DamageQueue *dq);
 bool dq_hasNext(DamageQueue *dq) {
-    pthread_mutex_lock(&dq->mtx);
-    bool result = dq->queue.count > 0;
-    pthread_mutex_unlock(&dq->mtx);
-    return result;
+    return dq->queue.count > 0;
 }
 
 bool dq_get(DamageQueue *dq, Rect *out);

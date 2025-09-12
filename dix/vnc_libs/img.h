@@ -14,13 +14,17 @@ unsigned char *compress_image_to_jpeg(unsigned char *input_image_data,
 
 // Extract RGB data for a rectangle from ScreenPtr into buffer
 // Buffer must be pre-allocated with size = rect_w * rect_h * 3 bytes (RGB)
+static inline unsigned char clamp8(int v) {
+    return (v < 0) ? 0 : (v > 255 ? 255 : v);
+}
+
 void extractRectRGB(ScreenPtr pScreen,
                     int x, int y, int rect_w, int rect_h,
                     unsigned char *outBuf)
 {
     // Get screen pixmap (backing framebuffer)
     PixmapPtr pPix = (*pScreen->GetScreenPixmap)(pScreen);
-    char *fb_base  = (char *) pPix->devPrivate.ptr;     // framebuffer base
+    char *fb_base  = (char *) pPix->devPrivate.ptr; // framebuffer base
     int stride     = pPix->devKind;                 // bytes per row
     int bpp        = pPix->drawable.bitsPerPixel;   // bits per pixel
 
@@ -31,26 +35,45 @@ void extractRectRGB(ScreenPtr pScreen,
 
     int bytesPerPixel = bpp / 8;
 
+    // Clamp rect inside screen
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if (x + rect_w > pPix->drawable.width)
+        rect_w = pPix->drawable.width - x;
+    if (y + rect_h > pPix->drawable.height)
+        rect_h = pPix->drawable.height - y;
+
     for (int row = 0; row < rect_h; row++) {
-        // Source pointer in framebuffer
         unsigned char *src =
             (unsigned char *)(fb_base + (y + row) * stride + x * bytesPerPixel);
 
-        // Destination pointer in output RGB buffer
         unsigned char *dst = outBuf + row * rect_w * 3;
 
-        // Copy one scanline pixel by pixel
         for (int col = 0; col < rect_w; col++) {
             unsigned char b = src[col * bytesPerPixel + 0];
             unsigned char g = src[col * bytesPerPixel + 1];
             unsigned char r = src[col * bytesPerPixel + 2];
-            // ignore alpha if 32bpp
+
+            // --- Apply simple text-friendly sharpening ---
+            // Compute luminance
+            // int Y = (int)(0.320*r + 0.687*g + 0.114*b);
+
+            //  int Ysharp = clamp8((int)((Y - 128) * 1.2 + 128));
+
+            // Blend sharpened luminance back into RGB (keep colors)
+            // float alpha = 0.3f; // 0 = no sharpen, 1 = full BW effect
+            // r = clamp8((int)(r * (1.0f - alpha) + Ysharp * alpha));
+            // g = clamp8((int)(g * (1.0f - alpha) + Ysharp * alpha));
+            // b = clamp8((int)(b * (1.0f - alpha) + Ysharp * alpha));
+
+            // Write RGB
             dst[col * 3 + 0] = r;
             dst[col * 3 + 1] = g;
             dst[col * 3 + 2] = b;
         }
     }
 }
+
 
 
 unsigned char *compress_image_to_jpeg(unsigned char *input_image_data,
@@ -79,6 +102,14 @@ unsigned char *compress_image_to_jpeg(unsigned char *input_image_data,
 
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, quality, TRUE);
+
+    // Force 4:2:2 chroma subsampling
+    // cinfo.comp_info[0].h_samp_factor = 2;
+    // cinfo.comp_info[0].v_samp_factor = 1;
+    // cinfo.comp_info[1].h_samp_factor = 1;
+    // cinfo.comp_info[1].v_samp_factor = 1;
+    // cinfo.comp_info[2].h_samp_factor = 1;
+    // cinfo.comp_info[2].v_samp_factor = 1;
 
     jpeg_start_compress(&cinfo, TRUE);
 
