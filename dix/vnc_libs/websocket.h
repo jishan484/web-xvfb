@@ -157,8 +157,7 @@ void ws_p_sendRaw(Websocket *ws, int startByte, char *data1, char *data2, long d
     }
     for (int i = 0; i < 30; i++)
     {
-        if (ws->client_socket[i] == 0 || ws->ws_client_socket[i] == 0)
-            continue;
+        if (ws->client_socket[i] == 0 || ws->ws_client_socket[i] == 0) continue;
         send(ws->client_socket[i], header, moded, 0); // for websocket header
         send(ws->client_socket[i], data1, data1Size, 0); // for websocket data 1
         send(ws->client_socket[i], data2, data2Size, 0); // for websocket data 2

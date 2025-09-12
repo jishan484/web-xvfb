@@ -51,6 +51,16 @@ void dq_init(DamageQueue *dq, int screen_w, int screen_h, int max_sub) {
     pthread_mutex_init(&dq->mtx, NULL);
 }
 
+void dq_reset(DamageQueue *dq, int screen_w, int screen_h);
+void dq_reset(DamageQueue *dq, int screen_w, int screen_h) {
+    dq->max_screen_width  = screen_w;
+    dq->max_screen_height = screen_h;
+
+    dq->queue.head    = 0;
+    dq->queue.tail    = 0;
+    dq->queue.count   = 0;
+}
+
 void dq_destroy(DamageQueue *dq);
 void dq_destroy(DamageQueue *dq) {
     free(dq->queue.rects);

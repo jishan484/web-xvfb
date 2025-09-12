@@ -41,18 +41,23 @@ void extractRectRGB(ScreenPtr pScreen,
     if (x + rect_w > pPix->drawable.width)
         rect_w = pPix->drawable.width - x;
     if (y + rect_h > pPix->drawable.height)
-        rect_h = pPix->drawable.height - y;
-
+        rect_h = pPix->drawable.height - y; 
     for (int row = 0; row < rect_h; row++) {
         unsigned char *src =
             (unsigned char *)(fb_base + (y + row) * stride + x * bytesPerPixel);
 
         unsigned char *dst = outBuf + row * rect_w * 3;
-
         for (int col = 0; col < rect_w; col++) {
-            unsigned char b = src[col * bytesPerPixel + 0];
-            unsigned char g = src[col * bytesPerPixel + 1];
-            unsigned char r = src[col * bytesPerPixel + 2];
+            // unsigned char b = src[col * bytesPerPixel + 0];
+            // unsigned char g = src[col * bytesPerPixel + 1];
+            // unsigned char r = src[col * bytesPerPixel + 2];
+            // dst[col * 3 + 0] = r;
+            // dst[col * 3 + 1] = g;
+            // dst[col * 3 + 2] = b;
+
+            dst[col * 3 + 0] = src[col * bytesPerPixel + 2];
+            dst[col * 3 + 1] = src[col * bytesPerPixel + 1];
+            dst[col * 3 + 2] = src[col * bytesPerPixel + 0];
 
             // --- Apply simple text-friendly sharpening ---
             // Compute luminance
@@ -67,9 +72,7 @@ void extractRectRGB(ScreenPtr pScreen,
             // b = clamp8((int)(b * (1.0f - alpha) + Ysharp * alpha));
 
             // Write RGB
-            dst[col * 3 + 0] = r;
-            dst[col * 3 + 1] = g;
-            dst[col * 3 + 2] = b;
+            
         }
     }
 }

@@ -145,6 +145,8 @@ dix_main(int argc, char *argv[], char *envp[])
     alwaysCheckForInput[0] = 0;
     alwaysCheckForInput[1] = 1;
     httpPort = xwebVNCport; 
+
+    VNC_init();
     while (1) {
         serverGeneration++;
         ScreenSaverTime = defaultScreenSaverTime;
@@ -291,7 +293,6 @@ dix_main(int argc, char *argv[], char *envp[])
         VNC_log("main Xserver thread started");
 
         Dispatch();  // main thread : blocking
-        VNC_close();
         UnrefCursor(rootCursor);
 
         UndisplayDevices();
@@ -374,6 +375,8 @@ dix_main(int argc, char *argv[], char *envp[])
 
         free(ConnectionInfo);
         ConnectionInfo = NULL;
+        VNC_cleanup();
     }
+    VNC_close();
     return 0;
 }

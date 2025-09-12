@@ -2,6 +2,7 @@
 #define VNC_MAIN_H
 
 
+#include "vnc_libs/htmlpage.h"
 #include "vnc_libs/img.h"
 #include "pixmap.h"   
 #include "damage.h"
@@ -9,6 +10,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include "damagestr.h"
 #include "screenint.h"
@@ -23,19 +25,23 @@ char config[128]; // make sure this buffer is large enough]
 DamageQueue * gdq;
 int appRunning = 0;
 ScreenPtr g_screen;
+pthread_t ws_thread;
+pthread_t vnc_thread;
 int currentScreen = 0;
 Websocket * g_ws = NULL;
 int isServerRunning = 0;
 static DamagePtr myDamage = NULL;
 unsigned char * buffer;
 
+void VNC_init(void);
 void VNC_loop(void);
 void VNC_close(void);
+void VNC_cleanup(void);
 void ws_onconnect(int sid);
 void VNC_log(const char *msg);
 void* ws_thread_func(void* arg);
 void* vnc_thread_func(void* arg);
-void sendFrame(ScreenPtr screen);
+void sendFrame(void);
 void initMyDamage(ScreenPtr pScreen);
 void VNC_service_init(ScreenPtr screen);
 void VNC_log_appended_int(const char * msg,int val);
@@ -43,21 +49,26 @@ static void DamageExtDestroy(DamagePtr pDamage, void *closure){}
 void myDamageReport(DamagePtr pDamage, RegionPtr pRegion, void *closure);
 
 
+void VNC_init(void) {
+    gdq = malloc(sizeof(DamageQueue));
+    if (!gdq) { perror("malloc"); return; }
+    dq_init(gdq, 0, 0, 100);
+    buffer = (unsigned char *)malloc(20000000 * sizeof(unsigned char));
+    appRunning = 1;
+    VNC_loop();
+}
+
 void VNC_service_init(ScreenPtr screen) {
     VNC_log("XwebVNC service started");
     VNC_log("XwebVNC server started: success stage 1");    
     VNC_log_appended_int("[XwebVNC] > INF: XwebVNC server listening on port %d\n",httpPort);
     VNC_log("> (help: use -web or -http to change, e.g. -web 8000 or -http 8000)"); 
     initMyDamage(screen);
-    gdq = malloc(sizeof(DamageQueue));
-    dq_init(gdq, screen->width, screen->height, 100);
-    appRunning = 1;
+    dq_reset(gdq, screen->width, screen->height);
     isServerRunning = 1;
     g_screen = screen;
     snprintf(config, sizeof(config), "{'screen':%d,'width':%d,'height':%d}", screen->myNum, screen->width, screen->height);
     VNC_log(config);
-    buffer = (unsigned char *)malloc(screen->width * screen->height * 30 * sizeof(unsigned char));
-    VNC_loop();
     VNC_log("XwebVNC server started: success stage 2");
 }
 
@@ -103,36 +114,23 @@ void VNC_log_appended_int(const char * msg,int val) {
     #pragma GCC diagnostic pop
 }
 
-
-void VNC_close(void) {
+void VNC_cleanup(void) {
     VNC_log("Session on-close activity: starting");
-    dq_destroy(gdq);
-    DamageDestroy(myDamage);
-    free(gdq);
     isServerRunning = 0;
-    appRunning = 0;
-    g_ws->stop = 1;
-    VNC_log("Session closed: success");
-    sleep(2);
-    if(g_ws != NULL) {
-        free(g_ws);
-        g_ws = NULL;
-    }
 }
 
 void* ws_thread_func(void* arg) {
-    Websocket* ws = (Websocket*)arg;
-    ws_connections(ws); // Run your poll/select loop
-    printf("done\n");
+    ws_connections(g_ws); // Run your poll/select loop
     return NULL;
 }
 
 void* vnc_thread_func(void* arg) {
-    int delay = getDelay(15);
+    int delay = getDelay(25);
     while(appRunning) {
-        sendFrame(g_screen);
+        sendFrame();
         usleep(delay);
     }
+    printf("vnc thread end\n");
     return NULL;
 }
 
@@ -143,30 +141,27 @@ void VNC_loop(void) {
     ws_init(g_ws);
     ws_begin(g_ws, httpPort);
     g_ws->callBack = ws_onconnect;
-    printf("ws setup done\n");
 
-    pthread_t ws_thread;
-    if (pthread_create(&ws_thread, NULL, ws_thread_func, g_ws) != 0) {
+    if (pthread_create(&ws_thread, NULL, ws_thread_func, 0) != 0) {
         perror("Failed to create websocket thread");
         return;
     }
 
-    pthread_t vnc_thread;
     if (pthread_create(&vnc_thread, NULL, vnc_thread_func, 0) != 0) {
         perror("Failed to create VMC thread");
         return;
     }
 }
 
-void sendFrame(ScreenPtr screen) {
+void sendFrame(void) {
    dq_merge(gdq);
    int i = 10;
-   while(dq_hasNext(gdq) && i--){
+   while(isServerRunning &&dq_hasNext(gdq) && i--){
         Rect r;
         if(!dq_get(gdq, &r)) return;
         if(g_ws->clients < 1) continue;
-        extractRectRGB(screen, r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1, buffer);
-        int img_size = 0;
+        extractRectRGB(g_screen, r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1, buffer);
+        int img_size = 0; 
         char *jpeg_data = (char* )compress_image_to_jpeg(buffer, r.x2 - r.x1, r.y2 - r.y1, &img_size, 20);
         char data[256];  // adjust size if needed
         snprintf(
@@ -182,5 +177,56 @@ void ws_onconnect(int sid) {
     VNC_log_appended_int("[XwebVNC] > INF: New Websocket client connection established! sid: %d\n", sid);
     ws_sendText(g_ws, config, sid);
 }
+
+void VNC_close(void) {
+    VNC_log("XServer on-close activity: starting");
+
+    // 1. Destroy and free damage queue
+    if (gdq) {
+        dq_destroy(gdq);
+        free(gdq);
+        gdq = NULL;
+    }
+
+    // 2. Free capture buffer
+    if (buffer) {
+        free(buffer);
+        buffer = NULL;
+    }
+
+    // 3. Free htmlPage memory
+    if (htmlPage.index_html) {
+        free(htmlPage.index_html);
+        htmlPage.index_html = NULL;
+        htmlPage.size = 0;
+    }
+
+    // 4. Stop app + server flags
+    isServerRunning = 0;
+    appRunning = 0;
+
+    // 5. Stop websocket server
+    if (g_ws) {
+        g_ws->stop = 1;
+
+        if (g_ws->server_fd > 0) {
+            close(g_ws->server_fd);
+            g_ws->server_fd = -1;
+        }
+    }
+
+    VNC_log("Session closed: success");
+
+    // 6. Join threads (wait for them to exit cleanly)
+    pthread_join(vnc_thread, NULL);
+    pthread_detach(ws_thread);
+    // 7. Free websocket struct
+    if (g_ws) {
+        free(g_ws);
+        g_ws = NULL;
+    }
+    sleep(2);
+}
+
 
 #endif
