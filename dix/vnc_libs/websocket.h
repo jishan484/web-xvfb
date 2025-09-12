@@ -1,14 +1,15 @@
 #ifndef WEBSOCKET_C_H
 #define WEBSOCKET_C_H
 
+#include <bits/types/struct_timeval.h>
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <errno.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include "vnc_libs/sha1.h"
@@ -33,13 +34,13 @@ typedef struct Websocket {
 
 // Function declarations
 void ws_init(Websocket *ws);
-void ws_onConnect(Websocket *ws, void (*ptr)(int sid));
 void ws_onMessage(Websocket *ws, void (*ptr)(void *data, int sid));
 void ws_begin(Websocket *ws, int port);
 void ws_connections(Websocket *ws);
 void ws_sendText(Websocket *ws, char *text, int sid);
 void ws_sendFrame(Websocket *ws, char *img, long size, int sid);
 void ws_sendRaw(Websocket *ws, int startByte, char *data, long size, int sid);
+void ws_p_sendRaw(Websocket *ws, int startByte, char *data1, char *data2, long data1Size, long data2Size, int sid);
 void ws_decode(unsigned char *src, char *dest);
 void handshake(Websocket *ws, unsigned char *data, int sd, int sid);
 
@@ -56,10 +57,6 @@ void ws_init(Websocket *ws) {
         ws->client_socket[i] = 0;
         ws->ws_client_socket[i] = 0;
     }
-}
-
-void ws_onConnect(Websocket *ws, void (*ptr)(int sid)) {
-    ws->callBack = ptr;
 }
 
 void ws_onMessage(Websocket *ws, void (*ptr)(void *data, int sid)) {
@@ -119,6 +116,55 @@ void ws_sendRaw(Websocket *ws, int startByte, char *data, long size, int sid) {
         send(ws->client_socket[i], data, size, 0);
     }
 }
+
+void ws_p_sendRaw(Websocket *ws, int startByte, char *data1, char *data2, long data1Size, long data2Size, int sid) 
+{
+    int moded = 0;
+    long imgSize = data1Size + data2Size;
+    char header[11];
+    header[0] = startByte;
+    if (imgSize <= 125)
+    {
+        header[1] = imgSize;
+        moded = 2;
+    }
+    else if (imgSize >= 126 && imgSize <= 65535)
+    {
+        header[1] = 126;
+        header[2] = ((imgSize >> 8) & 255);
+        header[3] = (imgSize & 255);
+        moded = 4;
+    }
+    else
+    {
+        header[1] = 127;
+        header[2] = ((imgSize >> 56) & 255);
+        header[3] = ((imgSize >> 48) & 255);
+        header[4] = ((imgSize >> 40) & 255);
+        header[5] = ((imgSize >> 32) & 255);
+        header[6] = ((imgSize >> 24) & 255);
+        header[7] = ((imgSize >> 16) & 255);
+        header[8] = ((imgSize >> 8) & 255);
+        header[9] = (imgSize & 255);
+        moded = 10;
+    }
+    if (sid != -1)
+    {
+        send(ws->client_socket[sid], header, moded, 0);    // for websocket header
+        send(ws->client_socket[sid], data1, data1Size, 0); // for websocket data 1
+        send(ws->client_socket[sid], data2, data2Size, 0); // for websocket data 2
+        return;
+    }
+    for (int i = 0; i < 30; i++)
+    {
+        if (ws->client_socket[i] == 0 || ws->ws_client_socket[i] == 0)
+            continue;
+        send(ws->client_socket[i], header, moded, 0); // for websocket header
+        send(ws->client_socket[i], data1, data1Size, 0); // for websocket data 1
+        send(ws->client_socket[i], data2, data2Size, 0); // for websocket data 2
+    }
+}
+
 
 void ws_sendText(Websocket *ws, char *text, int sid) {
     ws_sendRaw(ws, 129, text, strlen(text), sid);
@@ -257,7 +303,7 @@ void ws_connections(Websocket *ws) {
         perror("listen");
         exit(EXIT_FAILURE);
     }
-    printf("[I] Waiting for connections ...port %d opened (HTTP/WS)\n",ws->socketPort);
+    printf("[WsocVNC] > LOG: Waiting For Client Connections : Port %d Opened (HTTP/WS)\n",ws->socketPort);
     while (!ws->stop)
     {
         FD_ZERO(&readfds);
@@ -285,7 +331,7 @@ void ws_connections(Websocket *ws) {
             }
             ws->ready = 1;
             bool isAccespted = false;
-            printf("[I] New connection , socket fd is %d , ip is : %s , port : %d \n", new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+            printf("[WsocVNC] > LOG: New Connection : Client_No [%d] -> socket_fd=%d, ipAddr=%s, Port=%d\n", ws->clients, new_socket, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
             for (int i = 0; i < 10; i++)
             {
                 if (ws->client_socket[i] == 0 && ws->clients < 10)
@@ -301,7 +347,7 @@ void ws_connections(Websocket *ws) {
                 //reject connection
                 send(new_socket, "HTTP/1.1 400 Bad Request\r\n\r\n", 25, 0);
                 close(new_socket);
-                printf("[E] Max connections reached\n");
+                printf("[WsocVNC] > ERR: Max connections reached\n");
             }
         }
         else
@@ -316,7 +362,7 @@ void ws_connections(Websocket *ws) {
                     if ((valread = read(sd, buffer, 1024)) == 0)
                     {
                         getpeername(sd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-                        printf("Host disconnected , ip %s , port %d \n", inet_ntoa(address.sin_addr), ntohs(address.sin_port));
+                        printf("[WsocVNC] > LOG: Client [%d] Disconnected : ip=%s, port=%d\n", ws->clients, inet_ntoa(address.sin_addr), ntohs(address.sin_port));
                         close(sd);
                         ws->client_socket[i] = 0;
                         ws->ws_client_socket[i] = 0;
@@ -335,7 +381,7 @@ void ws_connections(Websocket *ws) {
                             ws->client_socket[i] = 0;
                             ws->ws_client_socket[i] = 0;
                             ws->clients--;
-                            printf("Host disconnected : %d | current active clients %d\n", sd,ws->clients);
+                            printf("[WsocVNC] > LOG: Host disconnected : %d | current active clients %d\n", sd,ws->clients);
                         }
                         else
                         {
@@ -351,6 +397,9 @@ void ws_connections(Websocket *ws) {
             }
         }
     }
+    close(ws->server_fd);
+    free(ws);
+    printf("[WsocVNC] > LOG: WebSocket closed successfully\n");
 }
 
 #endif

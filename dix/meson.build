@@ -49,12 +49,13 @@ endif
 
 dtrace_dep = declare_dependency(sources: [dtrace_src, dtrace_hdr])
 openssl_dep = dependency('openssl', required: true)
+jpeg_dep = dependency('libjpeg', required: true)
 
 
 libxserver_dix = static_library('libxserver_dix',
     srcs_dix,
     include_directories: inc,
-    dependencies: [ dtrace_dep, common_dep, openssl_dep ]
+    dependencies: [ dtrace_dep, common_dep, openssl_dep, jpeg_dep ]
 )
 
 libxserver_main = static_library('libxserver_main',

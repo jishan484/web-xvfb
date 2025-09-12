@@ -84,7 +84,6 @@ Equipment Corporation.
 #include <X11/fonts/fontstruct.h>
 #include <X11/fonts/libxfont2.h>
 
-#include "config/hotplug_priv.h"
 #include "extinit.h"
 #include "mainvnc.h"
 #include "dix/callback_priv.h"
@@ -106,17 +105,11 @@ Equipment Corporation.
 #include "windowstr.h"
 #include "resource.h"
 #include "dixstruct.h"
-#include "gcstruct.h"
 #include "extension.h"
-#include "colormap.h"
-#include "colormapst.h"
-#include "cursorstr.h"
 #include "selection.h"
 #include "servermd.h"
 #include "dixfont.h"
-#include "extnsionst.h"
 #include "privates.h"
-#include "exevents.h"
 #ifdef XINERAMA
 #include "panoramiXsrv.h"
 #else

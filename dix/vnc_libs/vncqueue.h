@@ -64,13 +64,13 @@ void dq_destroy(DamageQueue *dq) {
 void dq_push(DamageQueue *dq, Rect r);
 void dq_push(DamageQueue *dq, Rect r) {
     pthread_mutex_lock(&dq->mtx);
+    pthread_cleanup_push((void(*)(void*))pthread_mutex_unlock, (void*)&dq->mtx);
 
     if (dq->queue.count < dq->queue.max_sub_frame) {
         dq->queue.rects[dq->queue.tail] = r;
         dq->queue.tail = (dq->queue.tail + 1) % dq->queue.max_sub_frame;
         dq->queue.count++;
     } else {
-        // Overflow → replace with full screen
         dq->queue.head  = 0;
         dq->queue.tail  = 1;
         dq->queue.count = 1;
@@ -80,7 +80,7 @@ void dq_push(DamageQueue *dq, Rect r) {
         dq->queue.rects[0].y2 = dq->max_screen_height;
     }
 
-    pthread_mutex_unlock(&dq->mtx);
+    pthread_cleanup_pop(1); // always unlock
 }
 
 // Merge overlapping rects (optimized, in-place)

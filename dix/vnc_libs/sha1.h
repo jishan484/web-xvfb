@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <openssl/sha.h>
 #include "base64.h"   // already defines base64_encode
