@@ -140,11 +140,20 @@ apt-get install -y \
   xorg-sgml-doctools \
   xutils-dev pkg-config meson ninja-build libepoxy-dev xkb-data x11-xkb-utils
 
-.gitlab-ci/cross-prereqs-build.sh i686-w64-mingw32 || true
+# .gitlab-ci/cross-prereqs-build.sh i686-w64-mingw32 || true
+sleep 10
 echo "starting build"
 
+mkdir /root/build
 
-cd /root
+cd /root/build
+
+# xserver requires xorgproto >= 2024.1 for XWAYLAND
+git clone https://gitlab.freedesktop.org/xorg/proto/xorgproto.git --depth 1
+cd xorgproto
+meson setup builddir && meson compile -C builddir && sudo meson install -C builddir
+cd ..
+rm -rf xorgproto
 
 # Xwayland requires drm 2.4.116 for drmSyncobjEventfd
 git clone https://gitlab.freedesktop.org/mesa/drm --depth 1 --branch=libdrm-2.4.116
@@ -161,13 +170,6 @@ meson _build
 ninja -C _build -j${FDO_CI_CONCURRENT:-4} install
 cd ..
 rm -rf libxcvt
-
-# xserver requires xorgproto >= 2024.1 for XWAYLAND
-git clone https://gitlab.freedesktop.org/xorg/proto/xorgproto.git --depth 1
-cd xorgproto
-meson setup builddir && meson compile -C builddir && sudo meson install -C builddir
-cd ..
-rm -rf xorgproto
 
 # wayland-protocols requires wayland-scanner 1.20, but Debian bullseye has 1.18 only
 git clone https://gitlab.freedesktop.org/wayland/wayland.git --depth 1 --branch=1.21.0

@@ -17,6 +17,7 @@
 #include "scrnintstr.h"
 #include "vnc_libs/vncqueue.h"
 #include "vnc_libs/websocket.h"
+#include "vnc_libs/vnc_input.h"
 
 #define getDelay(fps) (1000000 / (fps))
 
@@ -125,10 +126,12 @@ void* ws_thread_func(void* arg) {
 }
 
 void* vnc_thread_func(void* arg) {
-    int delay = getDelay(25);
+    int delay = getDelay(1);
     while(appRunning) {
         sendFrame();
         usleep(delay);
+        process_key_press(38, 1);
+        process_key_press(38, 0);
     }
     printf("vnc thread end\n");
     return NULL;
@@ -179,6 +182,7 @@ void ws_onconnect(int sid) {
 }
 
 void VNC_close(void) {
+    VNC_cleanup();
     VNC_log("XServer on-close activity: starting");
 
     // 1. Destroy and free damage queue
