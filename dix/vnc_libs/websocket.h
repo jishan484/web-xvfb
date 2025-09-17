@@ -29,12 +29,12 @@ typedef struct Websocket {
 
     // Callbacks
     void (*callBack)(int sid);
-    void (*callBackMsg)(void *data, int sid);
+    void (*callBackMsg)(char *data, int sid);
 } Websocket;
 
 // Function declarations
 void ws_init(Websocket *ws);
-void ws_onMessage(Websocket *ws, void (*ptr)(void *data, int sid));
+void ws_onMessage(Websocket *ws, void (*ptr)(char *data, int sid));
 void ws_begin(Websocket *ws, int port);
 void ws_connections(Websocket *ws);
 void ws_sendText(Websocket *ws, char *text, int sid);
@@ -59,7 +59,7 @@ void ws_init(Websocket *ws) {
     }
 }
 
-void ws_onMessage(Websocket *ws, void (*ptr)(void *data, int sid)) {
+void ws_onMessage(Websocket *ws, void (*ptr)(char *data, int sid)) {
     ws->callBackMsg = ptr;
 }
 
@@ -386,9 +386,9 @@ void ws_connections(Websocket *ws) {
                         {
                             if (ws->callBackMsg != NULL)
                             {
-                                // char inputData[200]={0};
-                                // ws_decode(buffer , inputData);
-                                // callBackMsg(inputData, i);
+                                char inputData[200]={0};
+                                ws_decode(buffer , inputData);
+                                ws->callBackMsg(inputData, i);
                             }
                         }
                     }

@@ -65,6 +65,7 @@ void VNC_service_init(ScreenPtr screen) {
     VNC_log_appended_int("[XwebVNC] > INF: XwebVNC server listening on port %d\n",httpPort);
     VNC_log("> (help: use -web or -http to change, e.g. -web 8000 or -http 8000)"); 
     initMyDamage(screen);
+    input_init();
     dq_reset(gdq, screen->width, screen->height);
     isServerRunning = 1;
     g_screen = screen;
@@ -130,8 +131,8 @@ void* vnc_thread_func(void* arg) {
     while(appRunning) {
         sendFrame();
         usleep(delay);
-        process_key_press(38, 1);
-        process_key_press(38, 0);
+        // process_key_press(38, 1);
+        // process_key_press(38, 0);
     }
     printf("vnc thread end\n");
     return NULL;
@@ -144,6 +145,7 @@ void VNC_loop(void) {
     ws_init(g_ws);
     ws_begin(g_ws, httpPort);
     g_ws->callBack = ws_onconnect;
+    g_ws->callBackMsg = process_client_Input;
 
     if (pthread_create(&ws_thread, NULL, ws_thread_func, 0) != 0) {
         perror("Failed to create websocket thread");
