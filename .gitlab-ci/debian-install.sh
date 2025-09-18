@@ -140,7 +140,9 @@ apt-get install -y \
   xorg-sgml-doctools \
   xutils-dev pkg-config meson ninja-build libepoxy-dev xkb-data x11-xkb-utils
 
-# .gitlab-ci/cross-prereqs-build.sh i686-w64-mingw32 || true
+.gitlab-ci/cross-prereqs-build.sh i686-w64-mingw32 || true
+
+
 sleep 10
 echo "starting build"
 

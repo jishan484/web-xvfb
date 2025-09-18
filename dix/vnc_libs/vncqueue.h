@@ -94,14 +94,14 @@ void dq_push(DamageQueue *dq, Rect r) {
 }
 
 // Merge overlapping rects (optimized, in-place)
-void dq_merge(DamageQueue *dq);
-void dq_merge(DamageQueue *dq) {
+int dq_merge(DamageQueue *dq);
+int dq_merge(DamageQueue *dq) {
     pthread_mutex_lock(&dq->mtx);
 
     int n = dq->queue.count;
     if (n <= 1) {
         pthread_mutex_unlock(&dq->mtx);
-        return;
+        return n;
     }
 
     // Copy current queue into scratch buffer in linear order
@@ -134,13 +134,14 @@ void dq_merge(DamageQueue *dq) {
 
     // Write back merged rects into ring buffer
     dq->queue.head  = 0;
-    dq->queue.tail  = outCount % dq->queue.max_sub_frame;
+    dq->queue.tail  = outCount;
     dq->queue.count = outCount;
     for (int i = 0; i < outCount; i++) {
         dq->queue.rects[i] = dq->queue.scratch[i];
     }
 
     pthread_mutex_unlock(&dq->mtx);
+    return outCount;
 }
 
 bool dq_hasNext(DamageQueue *dq);

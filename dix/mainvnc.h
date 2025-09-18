@@ -2,6 +2,8 @@
 #define VNC_MAIN_H
 
 
+#include "inputstr.h"
+#include "misc.h"
 #include "vnc_libs/htmlpage.h"
 #include "vnc_libs/img.h"
 #include "pixmap.h"   
@@ -9,12 +11,6 @@
 #include <bits/pthreadtypes.h>
 #include <pthread.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include "damagestr.h"
-#include "screenint.h"
-#include "scrnintstr.h"
 #include "vnc_libs/vncqueue.h"
 #include "vnc_libs/websocket.h"
 #include "vnc_libs/vnc_input.h"
@@ -65,7 +61,8 @@ void VNC_service_init(ScreenPtr screen) {
     VNC_log_appended_int("[XwebVNC] > INF: XwebVNC server listening on port %d\n",httpPort);
     VNC_log("> (help: use -web or -http to change, e.g. -web 8000 or -http 8000)"); 
     initMyDamage(screen);
-    input_init();
+    input_init(&inputInfo);
+    
     dq_reset(gdq, screen->width, screen->height);
     isServerRunning = 1;
     g_screen = screen;
@@ -74,7 +71,7 @@ void VNC_service_init(ScreenPtr screen) {
     VNC_log("XwebVNC server started: success stage 2");
 }
 
-
+int ii = 0;
 void myDamageReport(DamagePtr pDamage, RegionPtr pRegion, void *closure) {
     int nboxes;
     pixman_box16_t *boxes = pixman_region_rectangles(pRegion, &nboxes);
@@ -92,7 +89,7 @@ void initMyDamage(ScreenPtr pScreen) {
     myDamage = DamageCreate(myDamageReport,
                             DamageExtDestroy,
                             DamageReportRawRegion,
-                            TRUE,
+                            FALSE,
                             pScreen,
                             NULL);
     if (!myDamage) {
@@ -127,7 +124,7 @@ void* ws_thread_func(void* arg) {
 }
 
 void* vnc_thread_func(void* arg) {
-    int delay = getDelay(1);
+    int delay = getDelay(15);
     while(appRunning) {
         sendFrame();
         usleep(delay);
@@ -159,9 +156,8 @@ void VNC_loop(void) {
 }
 
 void sendFrame(void) {
-   dq_merge(gdq);
-   int i = 10;
-   while(isServerRunning &&dq_hasNext(gdq) && i--){
+   int i = dq_merge(gdq);
+   while(isServerRunning && i--){
         Rect r;
         if(!dq_get(gdq, &r)) return;
         if(g_ws->clients < 1) continue;
