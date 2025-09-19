@@ -1,20 +1,20 @@
-
+#include <X11/X.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
-#include "input.h"
-#include "inputstr.h"
-#include "xkbstr.h"
+#include "vnc_libs/websocket.h"
 #include "xkbsrv.h"
 
 
 
 extern int appRunning; // Defined in mainvnc.h //
 int input_active = 0;
-DeviceIntPtr kbd;
+static DeviceIntPtr kbd;
+static DeviceIntPtr mouse;
+static Websocket * gl_ws;
+static char buff[30];
 
 static int *keysym_table[256] = {0};
-
+int buildstr(char *buff, const char *prefix, int val);
 void add_mapping(long sym, int keycode);
 void add_mapping(long sym, int keycode) {
     int hi = (sym >> 8) & 0xFF;
@@ -32,11 +32,11 @@ int lookup_keycode(KeySym sym) {
     return keysym_table[hi] ? keysym_table[hi][lo] : 0;
 }
 
-
-
-void input_init(InputInfo * inputInfoPtr);
-void input_init(InputInfo * inputInfoPtr) {
+void input_init(InputInfo * inputInfoPtr, Websocket * gws);
+void input_init(InputInfo * inputInfoPtr,  Websocket * gws) {
     kbd = inputInfoPtr->keyboard;
+    mouse = inputInfoPtr->pointer;
+    gl_ws = gws;
     input_active = 1;
     // setup keycode mapping for current master keyboard
     DeviceIntPtr dev;
@@ -65,16 +65,59 @@ void input_init(InputInfo * inputInfoPtr) {
 void process_key_press(int keycode, int is_pressed);
 void process_key_press(int keycode, int is_pressed) {
     if(!appRunning && !input_active) return;
-    usleep(20000);
-    QueueKeyboardEvents(kbd, is_pressed ? KeyPress : KeyRelease, keycode);
-    ProcessInputEvents();
+    kbd->sendEventsProc(kbd, is_pressed ? KeyPress : KeyRelease, keycode, NULL, NULL);
 }
+
+void process_mouse_move(int x, int y);
+void process_mouse_move(int x, int y) {
+    if(!appRunning && !input_active) return;
+
+    ValuatorMask *mask = valuator_mask_new(2);
+    if (!mask) return;
+    valuator_mask_zero(mask);
+    valuator_mask_set(mask, 0, x);  // axis 0 = X
+    valuator_mask_set(mask, 1, y);  // axis 1 = Y
+    mouse->sendEventsProc(mouse, MotionNotify, 0, POINTER_ABSOLUTE, mask);
+    if(mask) valuator_mask_free(&mask);
+    int ns = buildstr(buff, "P ", mouse->spriteInfo->sprite->current->name);
+    ws_sendRaw(gl_ws, 129, buff, ns, -1);
+}
+
+void process_mouse_click(int button);
+void process_mouse_click(int button) {
+    if(!appRunning && !input_active) return;
+    mouse->sendEventsProc(mouse, ButtonPress, button, 0, NULL);
+    mouse->sendEventsProc(mouse, ButtonRelease, button, 0, NULL);
+}
+
+void process_mouse_drag(int x1, int y1, int x2, int y2);
+void process_mouse_drag(int x1, int y1, int x2, int y2) {
+    if(!appRunning && !input_active) return;
+    process_mouse_move(x1, y1);
+    mouse->sendEventsProc(mouse, ButtonPress, 1, 0, NULL);
+    for (int i = 0; i <= 5; i++) {
+        int nx = x1 + (x2 - x1) * i / 5;
+        int ny = y1 + (y2 - y1) * i / 5;
+        process_mouse_move(nx, ny);
+        usleep(10000);
+    }
+    process_mouse_move(x2, y2);
+    mouse->sendEventsProc(mouse, ButtonRelease, 1, 0, NULL);
+}
+
+void process_mouse_scroll(int direction);
+void process_mouse_scroll(int direction) {
+    if(!appRunning && !input_active) return;
+    int button = (direction > 0) ? 4 : 5; // >0 = up, <0 = down
+    mouse->sendEventsProc(mouse, ButtonPress, button, 0, NULL);
+    mouse->sendEventsProc(mouse, ButtonRelease, button, 0, NULL);
+}
+
 
 
 void process_client_Input(char *data, int clientSD);
 void process_client_Input(char *data, int clientSD) {
-    // printf("Got data from %d : %s\n", clientSD, data);
-    if(!appRunning) return;
+    if(!appRunning && !input_active) return;
     int len = strlen(data);
     int x = 0, y = 0, i = 1, x2 = 0, y2 = 0;
 
@@ -85,7 +128,9 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
-        //mouse click event at x,y pos
+        process_mouse_move(x, y);
+        usleep(1000);
+        process_mouse_click(1);
     }
     else if (data[0] == 'M')
     {
@@ -94,7 +139,7 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
-        // mouse move to x,y pos
+        process_mouse_move(x,y);
     }
     else if (data[0] == 'R')
     {
@@ -103,7 +148,9 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
-        // mouse right click at pos x,y pos
+        process_mouse_move(x, y);
+        usleep(1000);
+        process_mouse_click(3);
     }
     else if (data[0] == 'D')
     {
@@ -119,21 +166,17 @@ void process_client_Input(char *data, int clientSD) {
         while (data[i] != 32 && i < len)
             y2 = y2 * 10 + data[i++] - 48;
         
-        // mouse select/drag event from x1,y1 to x2,y2 pos
+        process_mouse_drag(x, y, x2, y2);
     }
     else if (data[0] == 'S')
     {
         if (data[1] == 'U')
         {
-            // XTestFakeButtonEvent(this->display, 4, 1, 0);
-            // XTestFakeButtonEvent(this->display, 4, 0, 70);
-            // scroll up
+            process_mouse_scroll(1);
         }
         else
         {
-            // XTestFakeButtonEvent(this->display, 5, 1, 0);
-            // XTestFakeButtonEvent(this->display, 5, 0, 70);
-            // scroll down
+            process_mouse_scroll(-1);
         }
     }
     else if (data[0] == 'K')
@@ -144,7 +187,6 @@ void process_client_Input(char *data, int clientSD) {
             int keycode = lookup_keycode(sym);
             process_key_press(keycode, 1);
             process_key_press(keycode, 0);
-            // printf("data if cond %c %d which %d\n", data[1], data[1], keycode);
         }
         else if (data[1] == 50)
         {
@@ -166,4 +208,35 @@ void process_client_Input(char *data, int clientSD) {
             process_key_press(keycode1, 0);
         }
     }
+}
+
+
+
+int buildstr(char *buff, const char *prefix, int val) {
+    int n = 0;
+    // copy prefix
+    while (prefix && prefix[n]) {
+        buff[n] = prefix[n];
+        n++;
+    }
+    // special case for 0
+    if (val == 0) {
+        buff[n++] = '0';
+        buff[n] = '\0';
+        return n;
+    }
+    // write digits in reverse order
+    int start = n;
+    while (val != 0) {
+        buff[n++] = (val % 10) + '0';
+        val /= 10;
+    }
+    // reverse the digits part
+    for (int i = 0, j = n - 1; i < (n - start) / 2; i++, j--) {
+        char tmp = buff[start + i];
+        buff[start + i] = buff[j];
+        buff[j] = tmp;
+    }
+    buff[n] = '\0';
+    return n;
 }

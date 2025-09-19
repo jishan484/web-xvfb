@@ -29,6 +29,7 @@ Websocket * g_ws = NULL;
 int isServerRunning = 0;
 static DamagePtr myDamage = NULL;
 unsigned char * buffer;
+extern Bool EnableCursor;
 
 void VNC_init(void);
 void VNC_loop(void);
@@ -47,6 +48,7 @@ void myDamageReport(DamagePtr pDamage, RegionPtr pRegion, void *closure);
 
 
 void VNC_init(void) {
+    EnableCursor = FALSE;
     gdq = malloc(sizeof(DamageQueue));
     if (!gdq) { perror("malloc"); return; }
     dq_init(gdq, 0, 0, 100);
@@ -61,7 +63,7 @@ void VNC_service_init(ScreenPtr screen) {
     VNC_log_appended_int("[XwebVNC] > INF: XwebVNC server listening on port %d\n",httpPort);
     VNC_log("> (help: use -web or -http to change, e.g. -web 8000 or -http 8000)"); 
     initMyDamage(screen);
-    input_init(&inputInfo);
+    input_init(&inputInfo, g_ws);
     
     dq_reset(gdq, screen->width, screen->height);
     isServerRunning = 1;
@@ -71,7 +73,6 @@ void VNC_service_init(ScreenPtr screen) {
     VNC_log("XwebVNC server started: success stage 2");
 }
 
-int ii = 0;
 void myDamageReport(DamagePtr pDamage, RegionPtr pRegion, void *closure) {
     int nboxes;
     pixman_box16_t *boxes = pixman_region_rectangles(pRegion, &nboxes);
@@ -177,6 +178,16 @@ void sendFrame(void) {
 void ws_onconnect(int sid) {
     VNC_log_appended_int("[XwebVNC] > INF: New Websocket client connection established! sid: %d\n", sid);
     ws_sendText(g_ws, config, sid);
+    extractRectRGB(g_screen, 0, 0, g_screen->width, g_screen->height, buffer);
+        int img_size = 0; 
+        char *jpeg_data = (char* )compress_image_to_jpeg(buffer,g_screen->width, g_screen->height, &img_size, 20);
+        char data[256];  // adjust size if needed
+        snprintf(
+            data, sizeof(data),
+            "VPD%d %d %d %d %d %d \n", 0, 0, g_screen->width, g_screen->height, 24, img_size
+        );
+        ws_p_sendRaw(g_ws, 130, data, jpeg_data, strlen(data), img_size, -1);
+        free(jpeg_data);
 }
 
 void VNC_close(void) {
@@ -206,7 +217,6 @@ void VNC_close(void) {
     // 4. Stop app + server flags
     isServerRunning = 0;
     appRunning = 0;
-
     // 5. Stop websocket server
     if (g_ws) {
         g_ws->stop = 1;
