@@ -4,7 +4,6 @@
 
 #include "inputstr.h"
 #include "misc.h"
-#include "vnc_libs/htmlpage.h"
 #include "vnc_libs/img.h"
 #include "pixmap.h"   
 #include "damage.h"
@@ -43,6 +42,7 @@ void sendFrame(void);
 void initMyDamage(ScreenPtr pScreen);
 void VNC_service_init(ScreenPtr screen);
 void VNC_log_appended_int(const char * msg,int val);
+void vncSendFrame(int x, int y, int width, int height);
 static void DamageExtDestroy(DamagePtr pDamage, void *closure){}
 void myDamageReport(DamagePtr pDamage, RegionPtr pRegion, void *closure);
 
@@ -68,7 +68,7 @@ void VNC_service_init(ScreenPtr screen) {
     dq_reset(gdq, screen->width, screen->height);
     isServerRunning = 1;
     g_screen = screen;
-    snprintf(config, sizeof(config), "{'screen':%d,'width':%d,'height':%d}", screen->myNum, screen->width, screen->height);
+    snprintf(config, sizeof(config), "{'screen':%d,'width':%d,'height':%d, 'quality':%d}", screen->myNum, screen->width, screen->height, outputQuality);
     VNC_log(config);
     VNC_log("XwebVNC server started: success stage 2");
 }
@@ -76,7 +76,7 @@ void VNC_service_init(ScreenPtr screen) {
 void myDamageReport(DamagePtr pDamage, RegionPtr pRegion, void *closure) {
     int nboxes;
     pixman_box16_t *boxes = pixman_region_rectangles(pRegion, &nboxes);
-    for (int i = 0; i < nboxes; i++) {
+    for (int i = 0; i < nboxes && appRunning; i++) {
         Rect r;
         r.x1 = boxes[i].x1;
         r.y1 = boxes[i].y1;
@@ -120,6 +120,8 @@ void VNC_cleanup(void) {
 }
 
 void* ws_thread_func(void* arg) {
+    free(arg);
+    arg = NULL;
     ws_connections(g_ws); // Run your poll/select loop
     return NULL;
 }
@@ -162,32 +164,35 @@ void sendFrame(void) {
         Rect r;
         if(!dq_get(gdq, &r)) return;
         if(g_ws->clients < 1) continue;
-        extractRectRGB(g_screen, r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1, buffer);
-        int img_size = 0; 
-        char *jpeg_data = (char* )compress_image_to_jpeg(buffer, r.x2 - r.x1, r.y2 - r.y1, &img_size, 20);
-        char data[256];  // adjust size if needed
-        snprintf(
-            data, sizeof(data),
-            "VPD%d %d %d %d %d %d \n", r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1, 24, img_size
-        );
-        ws_p_sendRaw(g_ws, 130, data, jpeg_data, strlen(data), img_size, -1);
-        free(jpeg_data);
+        vncSendFrame(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
    }
 }
 
 void ws_onconnect(int sid) {
     VNC_log_appended_int("[XwebVNC] > INF: New Websocket client connection established! sid: %d\n", sid);
     ws_sendText(g_ws, config, sid);
-    extractRectRGB(g_screen, 0, 0, g_screen->width, g_screen->height, buffer);
-        int img_size = 0; 
-        char *jpeg_data = (char* )compress_image_to_jpeg(buffer,g_screen->width, g_screen->height, &img_size, 20);
-        char data[256];  // adjust size if needed
-        snprintf(
-            data, sizeof(data),
-            "VPD%d %d %d %d %d %d \n", 0, 0, g_screen->width, g_screen->height, 24, img_size
-        );
-        ws_p_sendRaw(g_ws, 130, data, jpeg_data, strlen(data), img_size, -1);
-        free(jpeg_data);
+    vncSendFrame(0, 0, g_screen->width, g_screen->height);
+}
+
+void vncSendFrame(int x, int y, int width, int height) {
+    if(!isServerRunning) return;
+    if(force_full_screen_refresh){
+        x = 0;
+        y = 0;
+        width = g_screen->width;
+        height = g_screen->height;
+        force_full_screen_refresh = 0;
+    }
+    extractRectRGB(g_screen, x, y, width, height, buffer);
+    int img_size = 0; 
+    char *jpeg_data = (char* )compress_image_to_jpeg(buffer, width, height, &img_size, outputQuality);
+    char data[256];  // adjust size if needed
+    snprintf(
+        data, sizeof(data),
+        "VPD%d %d %d %d %d %d \n", x, y, width, height, 24, img_size
+    );
+    ws_p_sendRaw(g_ws, 130, data, jpeg_data, strlen(data), img_size, -1);
+    free(jpeg_data);
 }
 
 void VNC_close(void) {
@@ -205,13 +210,6 @@ void VNC_close(void) {
     if (buffer) {
         free(buffer);
         buffer = NULL;
-    }
-
-    // 3. Free htmlPage memory
-    if (htmlPage.index_html) {
-        free(htmlPage.index_html);
-        htmlPage.index_html = NULL;
-        htmlPage.size = 0;
     }
 
     // 4. Stop app + server flags

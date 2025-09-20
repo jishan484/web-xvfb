@@ -1,11 +1,9 @@
 #ifndef WEBSOCKET_C_H
 #define WEBSOCKET_C_H
 
-#include <bits/types/struct_timeval.h>
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <arpa/inet.h>
@@ -13,7 +11,8 @@
 #include <netinet/in.h>
 #include <sys/select.h>
 #include "vnc_libs/sha1.h"
-#include "vnc_libs/htmlpage.h"
+#include "vnc_libs/htmlPage.h"
+#include "vnc_libs/logo.h"
 
 #define MAX_CLIENTS 25
 #define PORT 8080
@@ -65,7 +64,6 @@ void ws_onMessage(Websocket *ws, void (*ptr)(char *data, int sid)) {
 
 void ws_begin(Websocket *ws, int port) {
     ws->socketPort = port;
-    parseHttpPage();
 }
 
 void ws_decode(unsigned char *data, char *result) {
@@ -173,6 +171,17 @@ void ws_sendFrame(Websocket *ws, char *img, long size, int sid) {
     ws_sendRaw(ws, 130, img, size, sid);
 }
 
+int strcomncase_(char *text, const char *pattern, int start, int end);
+int strcomncase_(char *text, const char *pattern, int start, int end) {
+    int j = 0, k = 32;
+    for (int i = start; i < end; i++, j++) {
+        if (text[i] != pattern[j] && text[i] + k != pattern[j])
+            return 0;
+    }
+    return 1;
+}
+
+
 void handshake(Websocket *ws, unsigned char *data, int sd, int sid)
 {
     bool flag = false;
@@ -188,33 +197,21 @@ void handshake(Websocket *ws, unsigned char *data, int sd, int sid)
 
     while (ptr != NULL)
     {
-        // Trim trailing \r if present
         size_t plen = strlen(ptr);
         if (plen > 0 && ptr[plen-1] == '\r') ptr[plen-1] = '\0';
-
-        // Look for the Sec-WebSocket-Key header: "Sec-WebSocket-Key: <value>"
-        // Your original test used positions — we replicate behavior but safer:
-        if (strncmp(ptr, "Sec-WebSocket-Key:", 18) == 0)
+        if (strcomncase_(ptr, "sec-websocket-key:", 0, 18) == 1)
         {
-            // Skip leading "Sec-WebSocket-Key:" and whitespace
             const char *p = ptr + 18;
             while (*p == ' ' || *p == '\t') p++;
-
-            // copy value safely
             strncpy(key, p, sizeof(key)-1);
             key[sizeof(key)-1] = '\0';
-
-            // Now compute accept key
             char *hash = generate_websocket_accept(key); // returns malloc'd string
             if (!hash) {
-                // handle error gracefully
                 send(sd, "HTTP/1.1 500 Internal Server Error\r\n\r\n", 37, 0);
                 close(sd);
                 ws->client_socket[sid] = 0;
                 return;
             }
-
-            // Build response safely with snprintf
             char response[1024];
             int n = snprintf(response, sizeof(response),
                 "HTTP/1.1 101 Switching Protocols\r\n"
@@ -224,16 +221,13 @@ void handshake(Websocket *ws, unsigned char *data, int sd, int sid)
                 "Sec-WebSocket-Accept: %s\r\n"
                 "\r\n",
                 hash);
-
-            // send response (ensure snprintf didn't overflow)
             if (n > 0 && n < (int)sizeof(response)) {
                 send(sd, response, (size_t)n, 0);
             } else {
-                // fallback: partial send or error
                 send(sd, response, strlen(response), 0);
             }
 
-            free(hash); // IMPORTANT: free the accept key if generate_websocket_accept used malloc
+            free(hash);
 
             ws->ws_client_socket[sid] = 1;
             ws->ready = 1;
@@ -246,8 +240,16 @@ void handshake(Websocket *ws, unsigned char *data, int sd, int sid)
 
     if (!flag)
     {
-        // send html file by invoking liteHTTP class [todo]
-        send(ws->client_socket[sid], htmlPage.index_html, htmlPage.size, 0);
+        if(strcomncase_((char*) data, "GET /favicon.ico", 0, 16)) {
+            send(ws->client_socket[sid],"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 644715\r\nServer: PIwebVNC (by Jishan)\r\n\r\n",98, 0);
+            send(ws->client_socket[sid], vnclogo_PNG, vnclogo_PNG_len, 0);
+        } else if(strcomncase_((char*) data, "GET /logo.png", 0, 13)) {
+            send(ws->client_socket[sid],"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 644715\r\nServer: PIwebVNC (by Jishan)\r\n\r\n",98, 0);
+            send(ws->client_socket[sid], vnclogo_PNG, vnclogo_PNG_len, 0);
+        } else {
+            send(ws->client_socket[sid], "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nServer: PIwebVNC (by Jishan)\r\n\r\n", 97,0);
+            send(ws->client_socket[sid], index_html, index_html_len, 0);
+        }
         close(sd);
         ws->client_socket[sid] = 0;
         ws->ws_client_socket[sid] = 0;
@@ -396,8 +398,6 @@ void ws_connections(Websocket *ws) {
             }
         }
     }
-    close(ws->server_fd);
-    free(ws);
     printf("[WsocVNC] > LOG: WebSocket closed successfully\n");
 }
 

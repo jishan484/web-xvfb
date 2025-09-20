@@ -8,10 +8,12 @@
 
 extern int appRunning; // Defined in mainvnc.h //
 int input_active = 0;
+int outputQuality = 20;
+int force_full_screen_refresh = 0;
 static DeviceIntPtr kbd;
 static DeviceIntPtr mouse;
 static Websocket * gl_ws;
-static char buff[30];
+static char buffer_[30];
 
 static int *keysym_table[256] = {0};
 int buildstr(char *buff, const char *prefix, int val);
@@ -79,8 +81,8 @@ void process_mouse_move(int x, int y) {
     valuator_mask_set(mask, 1, y);  // axis 1 = Y
     mouse->sendEventsProc(mouse, MotionNotify, 0, POINTER_ABSOLUTE, mask);
     if(mask) valuator_mask_free(&mask);
-    int ns = buildstr(buff, "P ", mouse->spriteInfo->sprite->current->name);
-    ws_sendRaw(gl_ws, 129, buff, ns, -1);
+    int ns = buildstr(buffer_, "P ", mouse->spriteInfo->sprite->current->name);
+    ws_sendRaw(gl_ws, 129, buffer_, ns, -1);
 }
 
 void process_mouse_click(int button);
@@ -128,8 +130,6 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
-        process_mouse_move(x, y);
-        usleep(1000);
         process_mouse_click(1);
     }
     else if (data[0] == 'M')
@@ -148,8 +148,6 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
-        process_mouse_move(x, y);
-        usleep(1000);
         process_mouse_click(3);
     }
     else if (data[0] == 'D')
@@ -207,6 +205,11 @@ void process_client_Input(char *data, int clientSD) {
             process_key_press(keycode2, 0);
             process_key_press(keycode1, 0);
         }
+    }
+    else if (data[0] == 'Q') {
+        if(data[1] == 'H') outputQuality = 90;
+        else if(data[1] == 'S') outputQuality = 20;
+        force_full_screen_refresh = 1;
     }
 }
 
