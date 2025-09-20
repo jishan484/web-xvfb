@@ -240,14 +240,27 @@ void handshake(Websocket *ws, unsigned char *data, int sd, int sid)
 
     if (!flag)
     {
-        if(strcomncase_((char*) data, "GET /favicon.ico", 0, 16)) {
-            send(ws->client_socket[sid],"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 644715\r\nServer: PIwebVNC (by Jishan)\r\n\r\n",98, 0);
-            send(ws->client_socket[sid], vnclogo_PNG, vnclogo_PNG_len, 0);
-        } else if(strcomncase_((char*) data, "GET /logo.png", 0, 13)) {
-            send(ws->client_socket[sid],"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: 644715\r\nServer: PIwebVNC (by Jishan)\r\n\r\n",98, 0);
+        char header[256];  // plenty of space for HTTP headers
+
+        if (strcomncase_((char*) data, "GET /favicon.ico", 0, 16) ||
+            strcomncase_((char*) data, "GET /logo.png", 0, 13)) {
+            int hlen = sprintf(header,
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: image/png\r\n"
+                "Content-Length: 644715\r\n"
+                "Cache-Control: max-age=14400\r\n"   // same as CF uses
+                "Connection: close\r\n"
+                "Server: PIwebVNC\r\n"
+                "\r\n");
+            send(ws->client_socket[sid], header, hlen, 0);
             send(ws->client_socket[sid], vnclogo_PNG, vnclogo_PNG_len, 0);
         } else {
-            send(ws->client_socket[sid], "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nServer: PIwebVNC (by Jishan)\r\n\r\n", 97,0);
+            int hlen = sprintf(header,
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Server: PIwebVNC (by Jishan)\r\n"
+                "\r\n");
+            send(ws->client_socket[sid], header, hlen, 0);
             send(ws->client_socket[sid], index_html, index_html_len, 0);
         }
         close(sd);

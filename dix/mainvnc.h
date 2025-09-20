@@ -182,6 +182,7 @@ void vncSendFrame(int x, int y, int width, int height) {
         width = g_screen->width;
         height = g_screen->height;
         force_full_screen_refresh = 0;
+        ws_sendText(g_ws, config, -1);
     }
     extractRectRGB(g_screen, x, y, width, height, buffer);
     int img_size = 0; 
