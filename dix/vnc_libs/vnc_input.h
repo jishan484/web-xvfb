@@ -89,6 +89,7 @@ void process_mouse_click(int button);
 void process_mouse_click(int button) {
     if(!appRunning && !input_active) return;
     mouse->sendEventsProc(mouse, ButtonPress, button, 0, NULL);
+    usleep(1000);
     mouse->sendEventsProc(mouse, ButtonRelease, button, 0, NULL);
 }
 

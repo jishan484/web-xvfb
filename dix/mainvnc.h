@@ -159,17 +159,19 @@ void VNC_loop(void) {
 }
 
 void sendFrame(void) {
-   int i = dq_merge(gdq);
-   while(isServerRunning && i--){
+    if(!isServerRunning) return;
+    int i = dq_merge(gdq);
+    while(isServerRunning && i--){
         Rect r;
         if(!dq_get(gdq, &r)) return;
-        if(g_ws->clients < 1) continue;
+        if(g_ws->clients < 1) return;
         vncSendFrame(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
-   }
+    }
 }
 
 void ws_onconnect(int sid) {
     VNC_log_appended_int("[XwebVNC] > INF: New Websocket client connection established! sid: %d\n", sid);
+    snprintf(config, sizeof(config), "{'screen':%d,'width':%d,'height':%d, 'quality':%d}", g_screen->myNum, g_screen->width, g_screen->height, outputQuality);
     ws_sendText(g_ws, config, sid);
     vncSendFrame(0, 0, g_screen->width, g_screen->height);
 }
@@ -182,6 +184,7 @@ void vncSendFrame(int x, int y, int width, int height) {
         width = g_screen->width;
         height = g_screen->height;
         force_full_screen_refresh = 0;
+        snprintf(config, sizeof(config), "{'screen':%d,'width':%d,'height':%d, 'quality':%d}", g_screen->myNum, g_screen->width, g_screen->height, outputQuality);
         ws_sendText(g_ws, config, -1);
     }
     extractRectRGB(g_screen, x, y, width, height, buffer);

@@ -349,13 +349,14 @@
             statusdiv.innerText = "Connected";
             statusdiv.className = 'status connected';
             canvas.onmousedown = function (e) {
-                e.preventDefault(); canvas.focus();
+                e.preventDefault();
                 mousedownPosition.x = Math.floor(e.offsetX / canvas.offsetWidth * canvas.width)
                 mousedownPosition.y = Math.floor(e.offsetY / canvas.offsetHeight * canvas.height)
                 return false;
             }
             canvas.onmouseup = function (e) {
-                e.preventDefault(); canvas.focus();
+                if(e.button == 2) return;
+                e.preventDefault();
                 //if (mousedownPosition.state == 1) { mousedownPosition.state = 0; return false; }
                 var x = Math.floor(e.offsetX / canvas.offsetWidth * canvas.width)
                 var y = Math.floor(e.offsetY / canvas.offsetHeight * canvas.height)
@@ -364,7 +365,6 @@
                     data = "D" + mousedownPosition.x + " " + mousedownPosition.y + " " + x + " " + y + " ";
                     ws.send(data);
                 } else {
-                    canvas.style.cursor = "default";
                     data = "C" + x + " " + y + " ";
                     ws.send(data);
                 }
