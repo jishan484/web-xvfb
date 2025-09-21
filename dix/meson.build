@@ -8,7 +8,6 @@ srcs_dix = [
     'display.c',
     'dixfonts.c',
     'main.c',
-    'mainvnc.h',
     'dixutils.c',
     'enterleave.c',
     'events.c',

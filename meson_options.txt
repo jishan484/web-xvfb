@@ -1,14 +1,14 @@
-option('xorg', type: 'combo', choices: ['true', 'false', 'auto'], value: 'auto',
+option('xorg', type: 'combo', choices: ['true', 'false', 'auto'], value: 'false',
        description: 'Enable Xorg X Server')
 option('xephyr', type: 'boolean', value: false,
        description: 'Enable Xephyr nested X server')
-option('xwayland', type: 'combo', choices: ['true', 'false', 'auto'], value: 'auto',
+option('xwayland', type: 'combo', choices: ['true', 'false', 'auto'], value: 'false',
        description: 'Enable Xwayland X server')
 option('glamor', type: 'combo', choices: ['true', 'false', 'auto'], value: 'auto',
        description: 'Enable glamor (default yes for Xorg/Xwayland builds)')
 option('xwayland_ei', type: 'combo', choices: ['socket', 'portal', 'false', 'auto'],
        value: 'auto', description: 'Enable emulated input support on Xwayland')
-option('xnest', type: 'combo', choices: ['true', 'false', 'auto'], value: 'auto',
+option('xnest', type: 'combo', choices: ['true', 'false', 'auto'], value: 'false',
        description: 'Enable Xnest nested X server')
 option('xvfb', type: 'boolean', value: true,
        description: 'Enable Xvfb X server')

@@ -963,8 +963,10 @@ FlushClient(ClientPtr who, OsCommPtr oc, const void *__extraBuf, int extraCount)
     output_pending_clear(who);
 
     if (oco->size > BUFWATERMARK) {
-        free(oco->buf);
-        free(oco);
+        if(oco->buf)
+                free(oco->buf);
+        if(oco)
+            free(oco);
     }
     else {
         oco->next = FreeOutputs;
@@ -1037,8 +1039,10 @@ FreeOsBuffers(OsCommPtr oc)
     }
     if ((oco = oc->output)) {
         if (FreeOutputs) {
-            free(oco->buf);
-            free(oco);
+            if(oco->buf)
+                free(oco->buf);
+            if(oco)
+                free(oco);
         }
         else {
             FreeOutputs = oco;
