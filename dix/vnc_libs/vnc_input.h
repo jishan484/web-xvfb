@@ -1,6 +1,7 @@
 #include <X11/X.h>
 #include <stdio.h>
 #include <unistd.h>
+#include "input.h"
 #include "vnc_libs/websocket.h"
 #include "xkbsrv.h"
 
@@ -14,6 +15,7 @@ static DeviceIntPtr kbd;
 static DeviceIntPtr mouse;
 static Websocket * gl_ws;
 static char buffer_[30];
+static ValuatorMask *mask = NULL;
 
 static int *keysym_table[256] = {0};
 int buildstr(char *buff, const char *prefix, int val);
@@ -39,7 +41,12 @@ void input_init(InputInfo * inputInfoPtr,  Websocket * gws) {
     kbd = inputInfoPtr->keyboard;
     mouse = inputInfoPtr->pointer;
     gl_ws = gws;
-    input_active = 1;
+    input_active = 1;  
+    if (!mask) {
+        mask = valuator_mask_new(mouse->valuator->numAxes);
+        if (!mask) return;  // failed to allocate
+    }
+    if (!mask) return;
     // setup keycode mapping for current master keyboard
     DeviceIntPtr dev;
     for (dev = inputInfo.devices; dev; dev = dev->next) {
@@ -73,14 +80,12 @@ void process_key_press(int keycode, int is_pressed) {
 void process_mouse_move(int x, int y);
 void process_mouse_move(int x, int y) {
     if(!appRunning && !input_active) return;
-
-    ValuatorMask *mask = valuator_mask_new(2);
-    if (!mask) return;
+    // static mask reused across calls using global
     valuator_mask_zero(mask);
     valuator_mask_set(mask, 0, x);  // axis 0 = X
     valuator_mask_set(mask, 1, y);  // axis 1 = Y
-    mouse->sendEventsProc(mouse, MotionNotify, 0, POINTER_ABSOLUTE, mask);
-    if(mask) valuator_mask_free(&mask);
+    // QueuePointerEvents(mouse, MotionNotify, 0, POINTER_ABSOLUTE, mask);
+    QueuePointerEvents(mouse, MotionNotify,0, POINTER_ABSOLUTE, mask);
     int ns = buildstr(buffer_, "P ", mouse->spriteInfo->sprite->current->name);
     ws_sendRaw(gl_ws, 129, buffer_, ns, -1);
 }
@@ -88,16 +93,16 @@ void process_mouse_move(int x, int y) {
 void process_mouse_click(int button);
 void process_mouse_click(int button) {
     if(!appRunning && !input_active) return;
-    mouse->sendEventsProc(mouse, ButtonPress, button, 0, NULL);
+    QueuePointerEvents(mouse, ButtonPress, button, 0, NULL);
     usleep(1000);
-    mouse->sendEventsProc(mouse, ButtonRelease, button, 0, NULL);
+    QueuePointerEvents(mouse, ButtonRelease, button, 0, NULL);
 }
 
 void process_mouse_drag(int x1, int y1, int x2, int y2);
 void process_mouse_drag(int x1, int y1, int x2, int y2) {
     if(!appRunning && !input_active) return;
     process_mouse_move(x1, y1);
-    mouse->sendEventsProc(mouse, ButtonPress, 1, 0, NULL);
+    QueuePointerEvents(mouse, ButtonPress, 1, 0, NULL);
     for (int i = 0; i <= 5; i++) {
         int nx = x1 + (x2 - x1) * i / 5;
         int ny = y1 + (y2 - y1) * i / 5;
@@ -105,15 +110,15 @@ void process_mouse_drag(int x1, int y1, int x2, int y2) {
         usleep(10000);
     }
     process_mouse_move(x2, y2);
-    mouse->sendEventsProc(mouse, ButtonRelease, 1, 0, NULL);
+    QueuePointerEvents(mouse, ButtonRelease, 1, 0, NULL);
 }
 
 void process_mouse_scroll(int direction);
 void process_mouse_scroll(int direction) {
     if(!appRunning && !input_active) return;
     int button = (direction > 0) ? 4 : 5; // >0 = up, <0 = down
-    mouse->sendEventsProc(mouse, ButtonPress, button, 0, NULL);
-    mouse->sendEventsProc(mouse, ButtonRelease, button, 0, NULL);
+    QueuePointerEvents(mouse, ButtonPress, button, 0, NULL);
+    QueuePointerEvents(mouse, ButtonRelease, button, 0, NULL);
 }
 
 
@@ -131,6 +136,7 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
+        process_mouse_move(x, y);
         process_mouse_click(1);
     }
     else if (data[0] == 'M')
@@ -149,6 +155,7 @@ void process_client_Input(char *data, int clientSD) {
         i++;
         while (data[i] != 32 && i < len)
             y = y * 10 + data[i++] - 48;
+        process_mouse_move(x, y);
         process_mouse_click(3);
     }
     else if (data[0] == 'D')

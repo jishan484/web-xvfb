@@ -365,6 +365,7 @@
                     data = "D" + mousedownPosition.x + " " + mousedownPosition.y + " " + x + " " + y + " ";
                     ws.send(data);
                 } else {
+                    canvas.style.cursor = "default";
                     data = "C" + x + " " + y + " ";
                     ws.send(data);
                 }

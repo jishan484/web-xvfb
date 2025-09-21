@@ -5983,7 +5983,7 @@ EventMaskForClient(WindowPtr pWin, ClientPtr client)
     if (wClient(pWin) == client)
         return pWin->eventMask;
     for (other = wOtherClients(pWin); other; other = other->next) {
-        if (SameClient(other, client))
+        if (client != NULL && SameClient(other, client))
             return other->mask;
     }
     return 0;
